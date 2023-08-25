@@ -50,6 +50,19 @@ var fieldParser = parsec.And(toField,
 	eol,
 )
 
+func toField(nodes []parsec.ParsecNode) parsec.ParsecNode {
+	key := nodes[0].(string)
+	vnodes := nodes[1].([]parsec.ParsecNode)
+
+	if len(vnodes) == 0 {
+		return Field{key, ""}
+	}
+
+	v := vnodes[0].([]parsec.ParsecNode)[2]
+
+	return Field{key, v.(string)}
+}
+
 // Comment is a comment in an SSE event.
 type Comment string
 
@@ -72,12 +85,17 @@ var commentParser = parsec.And(toComment,
 	eol,
 )
 
+func toComment(nodes []parsec.ParsecNode) parsec.ParsecNode {
+	str := nodes[1].(string)
+	return Comment(str)
+}
+
 // Event is an SSE event, which is a set of zero or more comments or fields.
 type Event []any
 
 // Fields returns the fields in an SSE event.
 func (e Event) Fields() []Field {
-	var fields []Field
+	fields := make([]Field, 0, len(e))
 
 	for _, item := range e {
 		if field, ok := item.(Field); ok {
@@ -90,7 +108,7 @@ func (e Event) Fields() []Field {
 
 // Comments returns the comments in an SSE event.
 func (e Event) Comments() []Comment {
-	var comments []Comment
+	comments := make([]Comment, 0, len(e))
 
 	for _, item := range e {
 		if comment, ok := item.(Comment); ok {
@@ -120,38 +138,6 @@ var eventParser = parsec.And(toEvent,
 	),
 	eol,
 )
-
-// Stream is an SSE stream, which is a set of zero or more events.
-type Stream []Event
-
-// ParseStream parses an input into a Stream.
-func ParseStream(input []byte) (Stream, error) {
-	scanner := parsec.NewScanner(input)
-	node, scanner := streamParser(scanner)
-	if !scanner.Endof() {
-		cursor := scanner.GetCursor()
-		remainder := input[cursor:]
-		return Stream{}, fmt.Errorf("Unexpected input: %q", remainder)
-	}
-
-	return node.(Stream), nil
-}
-
-var streamParser = parsec.And(toStream,
-	parsec.Maybe(nil, bom),
-	parsec.Kleene(nil, eventParser),
-)
-
-func toField(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	key := nodes[0].(string)
-	v := nodes[1].([]parsec.ParsecNode)[0].([]parsec.ParsecNode)[2]
-	return Field{key, v.(string)}
-}
-
-func toComment(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	str := nodes[1].(string)
-	return Comment(str)
-}
 
 func toEvent(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	eventItems := nodes[0].([]parsec.ParsecNode)
@@ -183,6 +169,27 @@ func toEventItem(nodes []parsec.ParsecNode) parsec.ParsecNode {
 		panic(fmt.Sprintf("Unknown type: %T\n", t))
 	}
 }
+
+// Stream is an SSE stream, which is a set of zero or more events.
+type Stream []Event
+
+// ParseStream parses an input into a Stream.
+func ParseStream(input []byte) (Stream, error) {
+	scanner := parsec.NewScanner(input)
+	node, scanner := streamParser(scanner)
+	if !scanner.Endof() {
+		cursor := scanner.GetCursor()
+		remainder := input[cursor:]
+		return Stream{}, fmt.Errorf("Unexpected input: %q", remainder)
+	}
+
+	return node.(Stream), nil
+}
+
+var streamParser = parsec.And(toStream,
+	parsec.Maybe(nil, bom),
+	parsec.Kleene(nil, eventParser),
+)
 
 func toStream(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	eventNodes := nodes[1].([]parsec.ParsecNode)

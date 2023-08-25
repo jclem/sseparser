@@ -29,12 +29,35 @@ func TestParseField(t *testing.T) {
 			[]byte("foo:  \n"),
 			sseparser.Field{"foo", " "},
 		},
+		{
+			[]byte("foo bar\n"),
+			sseparser.Field{"foo bar", ""},
+		},
 	}
 
 	for _, test := range tests {
 		field, err := sseparser.ParseField(test.input)
 		require.NoError(t, err)
 		assert.Equal(t, test.expected, field)
+	}
+
+	errtests := []struct {
+		input []byte
+		msg   string
+	}{
+		{
+			[]byte("\n"),
+			"Unexpected input: \"\\n\"",
+		},
+		{
+			[]byte("foo: bar"),
+			"Unexpected input: \"foo: bar\"",
+		},
+	}
+
+	for _, test := range errtests {
+		_, err := sseparser.ParseField(test.input)
+		assert.EqualError(t, err, test.msg)
 	}
 }
 
@@ -58,6 +81,25 @@ func TestParseComment(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, test.expected, comment)
 	}
+
+	errtests := []struct {
+		input []byte
+		msg   string
+	}{
+		{
+			[]byte("hello\n"),
+			"Unexpected input: \"hello\\n\"",
+		},
+		{
+			[]byte("hello"),
+			"Unexpected input: \"hello\"",
+		},
+	}
+
+	for _, test := range errtests {
+		_, err := sseparser.ParseComment(test.input)
+		assert.EqualError(t, err, test.msg)
+	}
 }
 
 func TestParseEvent(t *testing.T) {
@@ -76,6 +118,11 @@ func TestParseEvent(t *testing.T) {
 				sseparser.Comment("bar"),
 			},
 		},
+		{
+			[]byte("\n"),
+			[]sseparser.Field{},
+			[]sseparser.Comment{},
+		},
 	}
 
 	for _, test := range tests {
@@ -83,6 +130,25 @@ func TestParseEvent(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, test.fields, event.Fields())
 		assert.Equal(t, test.comments, event.Comments())
+	}
+
+	errtests := []struct {
+		input []byte
+		msg   string
+	}{
+		{
+			[]byte("hello\n"),
+			"Unexpected input: \"hello\\n\"",
+		},
+		{
+			[]byte("hello"),
+			"Unexpected input: \"hello\"",
+		},
+	}
+
+	for _, test := range errtests {
+		_, err := sseparser.ParseEvent(test.input)
+		assert.EqualError(t, err, test.msg)
 	}
 }
 
@@ -104,11 +170,43 @@ func TestParseStream(t *testing.T) {
 				},
 			},
 		},
+		{
+			[]byte("\uFEFF:hello\n:bar\nfoo:bar\n\nbaz:qux\n\n"),
+			sseparser.Stream{
+				{
+					sseparser.Comment("hello"),
+					sseparser.Comment("bar"),
+					sseparser.Field{"foo", "bar"},
+				},
+				{
+					sseparser.Field{"baz", "qux"},
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
 		stream, err := sseparser.ParseStream(test.input)
 		require.NoError(t, err)
 		assert.Equal(t, test.expected, stream)
+	}
+
+	errtests := []struct {
+		input []byte
+		msg   string
+	}{
+		{
+			[]byte("hello\n"),
+			"Unexpected input: \"hello\\n\"",
+		},
+		{
+			[]byte("hello"),
+			"Unexpected input: \"hello\"",
+		},
+	}
+
+	for _, test := range errtests {
+		_, err := sseparser.ParseStream(test.input)
+		assert.EqualError(t, err, test.msg)
 	}
 }

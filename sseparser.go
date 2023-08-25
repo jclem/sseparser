@@ -456,6 +456,10 @@ func (s *StreamScanner) UnmarshalNext(v any) ([]byte, error) {
 
 // NewStreamScanner scans a [io.Reader] for SSEs.
 func NewStreamScanner(reader io.Reader) *StreamScanner {
+	if reader == nil {
+		panic("reader cannot be nil")
+	}
+
 	return &StreamScanner{
 		buf: []byte{},
 		r:   reader,

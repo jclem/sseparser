@@ -203,7 +203,7 @@ func (e Event) unmarshal(v any) error {
 				default:
 					if unmarshaler, ok := rv.Field(i).Addr().Interface().(UnmarshalerSSEValue); ok {
 						if err := unmarshaler.UnmarshalSSEValue(eventField.Value); err != nil {
-							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSE: %v", err)
+							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSEValue: %v", err)
 						}
 					}
 				}

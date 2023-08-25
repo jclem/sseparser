@@ -3,10 +3,12 @@ package sseparser_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"testing"
 
-	"github.com/jclem/sseparser/pkg/sseparser"
+	"github.com/jclem/sseparser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +66,19 @@ func TestParseField(t *testing.T) {
 	}
 }
 
+func ExampleParseField() {
+	field, err := sseparser.ParseField([]byte("foo: bar\n"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(field.Name)
+	fmt.Println(field.Value)
+	// Output:
+	// foo
+	// bar
+}
+
 func TestParseComment(t *testing.T) {
 	tests := []struct {
 		input    []byte
@@ -103,6 +118,17 @@ func TestParseComment(t *testing.T) {
 		_, err := sseparser.ParseComment(test.input)
 		assert.EqualError(t, err, test.msg)
 	}
+}
+
+func ExampleParseComment() {
+	comment, err := sseparser.ParseComment([]byte(":hello\n"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(comment)
+	// Output:
+	// hello
 }
 
 func TestParseEvent(t *testing.T) {
@@ -153,6 +179,17 @@ func TestParseEvent(t *testing.T) {
 		_, err := sseparser.ParseEvent(test.input)
 		assert.EqualError(t, err, test.msg)
 	}
+}
+
+func ExampleParseEvent() {
+	event, err := sseparser.ParseEvent([]byte(":hello\n:bar\nfoo:bar\n\n"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", event)
+	// Output:
+	// [hello bar {Name:foo Value:bar}]
 }
 
 func TestParseStream(t *testing.T) {
@@ -214,8 +251,19 @@ func TestParseStream(t *testing.T) {
 	}
 }
 
+func ExampleParseStream() {
+	stream, err := sseparser.ParseStream([]byte(":hello\n:bar\nfoo:bar\n\nbaz:qux\n\n"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", stream)
+	// Output:
+	// [[hello bar {Name:foo Value:bar}] [{Name:baz Value:qux}]]
+}
+
 func TestStreamScanner(t *testing.T) {
-	input := []byte(":event-1\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfield-3: value-3\n\n")
+	input := []byte(":event-1\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfield-3: value-3\n\nLEFTOVER")
 	reader := bytes.NewReader(input)
 
 	scanner := sseparser.NewStreamScanner(reader)
@@ -232,20 +280,53 @@ func TestStreamScanner(t *testing.T) {
 		},
 	}
 
-	e, err := scanner.Next()
+	e, _, err := scanner.Next()
 	require.NoError(t, err)
 	assert.Equal(t, expected[0], e)
 
-	e, err = scanner.Next()
+	e, _, err = scanner.Next()
 	require.NoError(t, err)
 	assert.Equal(t, expected[1], e)
 
-	e, err = scanner.Next()
+	e, b, err := scanner.Next()
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, io.EOF)
+	assert.ErrorAs(t, err, &sseparser.ErrStreamEOF{})
+	assert.ErrorAs(t, err, &io.EOF)
+	assert.Equal(t, []byte("LEFTOVER"), b)
 }
 
-func TestUnmarshal(t *testing.T) {
+func ExampleStreamScanner() {
+	input := []byte(`:event-1
+field-1: value-1
+field-2: value-2
+
+:event-2
+field-3: value-3
+
+`)
+	reader := bytes.NewReader(input)
+
+	scanner := sseparser.NewStreamScanner(reader)
+
+	for {
+		e, _, err := scanner.Next()
+		if err != nil {
+			if errors.As(err, &sseparser.ErrStreamEOF{}) {
+				break
+			}
+
+			panic(err)
+		}
+
+		fmt.Printf("%+v\n", e)
+	}
+
+	// Output:
+	// &[event-1 {Name:field-1 Value:value-1} {Name:field-2 Value:value-2}]
+	// &[event-2 {Name:field-3 Value:value-3}]
+}
+
+func TestStreamScanner_UnmarshalNext(t *testing.T) {
 	input := []byte(":event-1\nfoo: 1\nbar: hello\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfoo: 1\nfield-3: value-3\n\nfoo: true\n\nmeta: {\"foo\": \"bar\"}\n\n")
 
 	type testStruct struct {
@@ -268,25 +349,128 @@ func TestUnmarshal(t *testing.T) {
 	reader := bytes.NewReader(input)
 	scanner := sseparser.NewStreamScanner(reader)
 
-	event := testStruct{}
-	err := scanner.Unmarshal(&event)
+	var event testStruct
+	_, err := scanner.UnmarshalNext(&event)
 	require.NoError(t, err)
 	assert.Equal(t, testStruct{"1", "hello"}, event)
 
-	event2 := testStruct2{}
-	err = scanner.Unmarshal(&event2)
+	var event2 testStruct2
+	_, err = scanner.UnmarshalNext(&event2)
 	require.NoError(t, err)
 	assert.Equal(t, testStruct2{1}, event2)
 
-	event3 := testStruct3{}
-	err = scanner.Unmarshal(&event3)
+	var event3 testStruct3
+	_, err = scanner.UnmarshalNext(&event3)
 	require.NoError(t, err)
 	assert.Equal(t, testStruct3{true}, event3)
 
-	event4 := testStruct4{}
-	err = scanner.Unmarshal(&event4)
+	var event4 testStruct4
+	_, err = scanner.UnmarshalNext(&event4)
 	require.NoError(t, err)
 	assert.Equal(t, testStruct4{meta{"bar"}}, event4)
+}
+
+func ExampleStreamScanner_UnmarshalNext() {
+	input := []byte(`:event-1
+foo: 1
+bar: hello
+field-1: value-1
+field-2: value-2
+
+:event-2
+foo: 1
+field-3: value-3
+
+foo: true
+
+`)
+
+	type testStruct struct {
+		Foo string `sse:"foo"`
+		Bar string `sse:"bar"`
+	}
+
+	reader := bytes.NewReader(input)
+	scanner := sseparser.NewStreamScanner(reader)
+
+	for {
+		var event testStruct
+		_, err := scanner.UnmarshalNext(&event)
+		if err != nil {
+			if errors.As(err, &sseparser.ErrStreamEOF{}) {
+				break
+			}
+
+			panic(err)
+		}
+
+		fmt.Printf("%+v\n", event)
+	}
+
+	// Output:
+	// {Foo:1 Bar:hello}
+	// {Foo:1 Bar:}
+	// {Foo:true Bar:}
+}
+
+func ExampleUnmarshalerSSE() {
+	input := []byte(`:event-1
+foo: 1
+bar: hello
+
+`)
+
+	type testStruct struct {
+		Foo string `sse:"foo"`
+		Bar string `sse:"bar"`
+	}
+
+	reader := bytes.NewReader(input)
+	scanner := sseparser.NewStreamScanner(reader)
+
+	var s testStruct
+	_, err := scanner.UnmarshalNext(&s)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", s)
+	// Output:
+	// {Foo:1 Bar:hello}
+}
+
+func ExampleUnmarshalerSSEValue() {
+	input := []byte(`:event-1
+meta: {"foo":"bar"}
+
+`)
+
+	// Meta implements the UnmarshalerSSEValue interface:
+	//
+	// type meta struct {
+	// 	Foo string `json:"foo"`
+	// }
+	//
+	// func (m *meta) UnmarshalSSEValue(v string) error {
+	// 	return json.Unmarshal([]byte(v), m)
+	// }
+
+	type testStruct struct {
+		Meta meta `sse:"meta"`
+	}
+
+	reader := bytes.NewReader(input)
+	scanner := sseparser.NewStreamScanner(reader)
+
+	var s testStruct
+	_, err := scanner.UnmarshalNext(&s)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", s)
+	// Output:
+	// {Meta:{Foo:bar}}
 }
 
 type meta struct {

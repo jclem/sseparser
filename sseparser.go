@@ -2,8 +2,8 @@
 // The SSE specification this package is modeled on can be found here:
 // https://html.spec.whatwg.org/multipage/server-sent-events.html
 //
-// The primary means of utilizing this package is through the StreamScanner
-// type, which scans an io.Reader for SSE events.
+// The primary means of utilizing this package is through the [StreamScanner]
+// type, which scans an [io.Reader] for SSEs.
 package sseparser
 
 import (
@@ -26,13 +26,15 @@ var namechar = parsec.TokenExact("(?:[\u0000-\u0009]|[\u000B-\u000C]|[\u000E-\u0
 var anychar = parsec.TokenExact("(?:[\u0000-\u0009]|[\u000B-\u000C]|[\u000E-\U0010FFFF])", "ANYCHAR")
 var eol = parsec.OrdChoice(nil, parsec.And(nil, cr, lf), cr, lf)
 
-// Field is an SSE field: A key and an optional value.
+// Field is an SSE field: A field name and an optional value.
 type Field struct {
-	Key   string
+	// Name is the field name.
+	Name string
+	// Value is the field value. This may be an empty string.
 	Value string
 }
 
-// ParseField parses an input into a Field.
+// ParseField parses a byte slice into a [Field].
 func ParseField(input []byte) (Field, error) {
 	scanner := parsec.NewScanner(input)
 	node, scanner := fieldParser(scanner)
@@ -58,22 +60,22 @@ var fieldParser = parsec.And(toField,
 )
 
 func toField(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	key := nodes[0].(string)
+	name := nodes[0].(string)
 	vnodes := nodes[1].([]parsec.ParsecNode)
 
 	if len(vnodes) == 0 {
-		return Field{key, ""}
+		return Field{name, ""}
 	}
 
 	v := vnodes[0].([]parsec.ParsecNode)[2]
 
-	return Field{key, v.(string)}
+	return Field{name, v.(string)}
 }
 
-// Comment is a comment in an SSE event.
+// Comment is a comment in an SSE.
 type Comment string
 
-// ParseComment parses an input into a Comment.
+// ParseComment parses a byte slice into a [Comment].
 func ParseComment(input []byte) (Comment, error) {
 	scanner := parsec.NewScanner(input)
 	node, scanner := commentParser(scanner)
@@ -97,10 +99,14 @@ func toComment(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	return Comment(str)
 }
 
-// Event is an SSE event, which is a set of zero or more comments or fields.
+// Event is a server-sent event (SSE), which is a set of zero or more comments
+// and/or fields.
+//
+// The underlying type is a []any, but each value will be either a [Field] or a
+// [Comment].
 type Event []any
 
-// Fields returns the fields in an SSE event.
+// Fields returns the fields in an SSE.
 func (e Event) Fields() []Field {
 	fields := make([]Field, 0, len(e))
 
@@ -113,7 +119,7 @@ func (e Event) Fields() []Field {
 	return fields
 }
 
-// Comments returns the comments in an SSE event.
+// Comments returns the comments in an SSE.
 func (e Event) Comments() []Comment {
 	comments := make([]Comment, 0, len(e))
 
@@ -126,15 +132,18 @@ func (e Event) Comments() []Comment {
 	return comments
 }
 
-// UnmarshalerSSE is an interface implemented by types that can unmarshal an SSE
-// event.
+// UnmarshalerSSE is an interface implemented by types into which an SSE can be
+// unmarshaled.
 type UnmarshalerSSE interface {
 	// UnmarshalSSE unmarshals the given event into the type.
 	UnmarshalSSE(event Event) error
 }
 
-// UnmarshalerSSEValue is an interface implemented by types that can unmarshal
-// an SSE field value.
+// UnmarshalerSSEValue is an interface implemented by types into which an SSE
+// field value can be unmarshaled.
+//
+// This is useful for custom unmarshaling of field values, such as when a field
+// value contains a complete JSON payload.
 type UnmarshalerSSEValue interface {
 	// UnmarshalSSEValue unmarshals the given event field value into the type.
 	UnmarshalSSEValue(value string) error
@@ -167,7 +176,7 @@ func (e Event) unmarshal(v any) error {
 		}
 
 		for _, eventField := range e.Fields() {
-			if eventField.Key == tag {
+			if eventField.Name == tag {
 				switch rv.Field(i).Kind() {
 				case reflect.String:
 					rv.Field(i).SetString(eventField.Value)
@@ -267,10 +276,10 @@ func toEventItem(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	}
 }
 
-// Stream is an SSE stream, which is a set of zero or more events.
+// Stream is a SSE stream, which is a set of zero or more [Event].
 type Stream []Event
 
-// ParseStream parses an input into a Stream.
+// ParseStream parses a byte slice into a [Stream].
 func ParseStream(input []byte) (Stream, error) {
 	scanner := parsec.NewScanner(input)
 	node, scanner := streamParser(scanner)
@@ -309,57 +318,93 @@ func toString(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	return str
 }
 
-// StreamScanner scans a reader for SSE events.
+// StreamScanner scans an [io.Reader] for SSEs.
 type StreamScanner struct {
 	buf []byte
 	r   io.Reader
 	rs  int
 }
 
-// Next returns the next event in the stream.
-func (s *StreamScanner) Next() (*Event, error) {
+// ErrStreamEOF is returned when the end of the stream is reached. This error
+// wraps an [io.EOF] error.
+type ErrStreamEOF struct {
+	eof error
+}
+
+// Error implements the error interface.
+func (e ErrStreamEOF) Error() string {
+	return "end of stream"
+}
+
+// Unwrap implements the error unwrapping interface.
+func (e ErrStreamEOF) Unwrap() error {
+	return e.eof
+}
+
+// newErrStreamEOF creates a new [ErrStreamEOF] error.
+func newErrStreamEOF(err error) ErrStreamEOF {
+	if err != io.EOF {
+		panic("newErrStreamEOF called with non-EOF error")
+	}
+
+	return ErrStreamEOF{err}
+}
+
+// Next returns the next event in the stream. There are three possible return states:
+//
+//  1. An [Event], a byte slice, and nil are returned if an event was parsed.
+//  2. nil, a byte slice, and [ErrStreamEOF] are returned if the end of the
+//     stream was reached.
+//  3. nil, a byte slice, and an error are returned if an error occurred while
+//     reading from the stream.
+//
+// In all three cases, the byte slice contains any data that was read from the
+// reader but was not part of the event. This data can be ignored while making
+// subsequent calls to Next, but may be used to recover from errors, or just
+// when not scanning the full stream.
+func (s *StreamScanner) Next() (*Event, []byte, error) {
 	for {
 		b := make([]byte, s.rs)
 
 		var eof error
 		n, err := s.r.Read(b)
+		s.buf = append(s.buf, b[:n]...)
 		if err != nil {
 			if err == io.EOF {
-				eof = err
+				eof = newErrStreamEOF(err)
 			} else {
-				return nil, err
+				return nil, s.buf, err
 			}
 		}
 
-		s.buf = append(s.buf, b[:n]...)
-
 		scanner := parsec.NewScanner(s.buf)
-
 		node, scanner := eventParser(scanner)
 
 		if node, ok := node.(Event); ok {
 			offset := scanner.GetCursor()
 			s.buf = s.buf[offset:]
-			return &node, nil
+			return &node, s.buf, nil
 		} else if eof != nil {
-			return nil, eof
+			return nil, s.buf, eof
 		} else {
 			continue
 		}
 	}
 }
 
-// Unmarshal unmarshals the next event in the stream into the provided struct.
-func (s *StreamScanner) Unmarshal(v any) error {
-	event, err := s.Next()
+// UnmarshalNext unmarshals the next event in the stream into the provided
+// struct. See [StreamScanner.Next] for details on the []byte and error return
+// values.
+func (s *StreamScanner) UnmarshalNext(v any) ([]byte, error) {
+	event, left, err := s.Next()
 	if err != nil {
-		return err
+		return left, err
 	}
 
-	return event.unmarshal(v)
+	return left, event.unmarshal(v)
 }
 
-// NewStreamScanner scans a reader for SSE events.
+// NewStreamScanner scans a [io.Reader] for SSEs.
 func NewStreamScanner(reader io.Reader) *StreamScanner {
 	return &StreamScanner{
 		buf: []byte{},

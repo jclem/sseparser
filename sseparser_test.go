@@ -52,11 +52,11 @@ func TestParseField(t *testing.T) {
 	}{
 		{
 			[]byte("\n"),
-			"Unexpected input: \"\\n\"",
+			"unexpected input: \"\\n\"",
 		},
 		{
 			[]byte("foo: bar"),
-			"Unexpected input: \"foo: bar\"",
+			"unexpected input: \"foo: bar\"",
 		},
 	}
 
@@ -72,8 +72,8 @@ func ExampleParseField() {
 		panic(err)
 	}
 
-	fmt.Println(field.Name)
-	fmt.Println(field.Value)
+	_, _ = fmt.Println(field.Name)
+	_, _ = fmt.Println(field.Value)
 	// Output:
 	// foo
 	// bar
@@ -106,11 +106,11 @@ func TestParseComment(t *testing.T) {
 	}{
 		{
 			[]byte("hello\n"),
-			"Unexpected input: \"hello\\n\"",
+			"unexpected input: \"hello\\n\"",
 		},
 		{
 			[]byte("hello"),
-			"Unexpected input: \"hello\"",
+			"unexpected input: \"hello\"",
 		},
 	}
 
@@ -126,7 +126,7 @@ func ExampleParseComment() {
 		panic(err)
 	}
 
-	fmt.Println(comment)
+	_, _ = fmt.Println(comment)
 	// Output:
 	// hello
 }
@@ -167,11 +167,11 @@ func TestParseEvent(t *testing.T) {
 	}{
 		{
 			[]byte("hello\n"),
-			"Unexpected input: \"hello\\n\"",
+			"unexpected input: \"hello\\n\"",
 		},
 		{
 			[]byte("hello"),
-			"Unexpected input: \"hello\"",
+			"unexpected input: \"hello\"",
 		},
 	}
 
@@ -187,7 +187,7 @@ func ExampleParseEvent() {
 		panic(err)
 	}
 
-	fmt.Printf("%+v\n", event)
+	_, _ = fmt.Printf("%+v\n", event)
 	// Output:
 	// [hello bar {Name:foo Value:bar}]
 }
@@ -237,11 +237,11 @@ func TestParseStream(t *testing.T) {
 	}{
 		{
 			[]byte("hello\n"),
-			"Unexpected input: \"hello\\n\"",
+			"unexpected input: \"hello\\n\"",
 		},
 		{
 			[]byte("hello"),
-			"Unexpected input: \"hello\"",
+			"unexpected input: \"hello\"",
 		},
 	}
 
@@ -257,7 +257,7 @@ func ExampleParseStream() {
 		panic(err)
 	}
 
-	fmt.Printf("%+v\n", stream)
+	_, _ = fmt.Printf("%+v\n", stream)
 	// Output:
 	// [[hello bar {Name:foo Value:bar}] [{Name:baz Value:qux}]]
 }
@@ -268,7 +268,7 @@ func TestStreamScanner(t *testing.T) {
 
 	scanner := sseparser.NewStreamScanner(reader)
 
-	expected := []*sseparser.Event{
+	expected := []sseparser.Event{
 		{
 			sseparser.Comment("event-1"),
 			sseparser.Field{"field-1", "value-1"},
@@ -318,16 +318,30 @@ field-3: value-3
 			panic(err)
 		}
 
-		fmt.Printf("%+v\n", e)
+		_, _ = fmt.Printf("%+v\n", e)
 	}
 
 	// Output:
-	// &[event-1 {Name:field-1 Value:value-1} {Name:field-2 Value:value-2}]
-	// &[event-2 {Name:field-3 Value:value-3}]
+	// [event-1 {Name:field-1 Value:value-1} {Name:field-2 Value:value-2}]
+	// [event-2 {Name:field-3 Value:value-3}]
 }
 
 func TestStreamScanner_UnmarshalNext(t *testing.T) {
-	input := []byte(":event-1\nfoo: 1\nbar: hello\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfoo: 1\nfield-3: value-3\n\nfoo: true\n\nmeta: {\"foo\": \"bar\"}\n\n")
+	input := []byte(`:event-1
+foo: 1
+bar: hello
+field-1: value-1
+field-2: value-2
+
+:event-2
+foo: 1
+field-3: value-3
+
+foo: true
+
+meta: {"foo": "bar"}
+
+`)
 
 	type testStruct struct {
 		Foo string `sse:"foo"`
@@ -404,7 +418,7 @@ foo: true
 			panic(err)
 		}
 
-		fmt.Printf("%+v\n", event)
+		_, _ = fmt.Printf("%+v\n", event)
 	}
 
 	// Output:
@@ -434,7 +448,7 @@ bar: hello
 		panic(err)
 	}
 
-	fmt.Printf("%+v\n", s)
+	_, _ = fmt.Printf("%+v\n", s)
 	// Output:
 	// {Foo:1 Bar:hello}
 }
@@ -468,7 +482,7 @@ meta: {"foo":"bar"}
 		panic(err)
 	}
 
-	fmt.Printf("%+v\n", s)
+	_, _ = fmt.Printf("%+v\n", s)
 	// Output:
 	// {Meta:{Foo:bar}}
 }
@@ -478,5 +492,9 @@ type meta struct {
 }
 
 func (m *meta) UnmarshalSSEValue(v string) error {
-	return json.Unmarshal([]byte(v), m)
+	if err := json.Unmarshal([]byte(v), m); err != nil {
+		return fmt.Errorf("failed to unmarshal meta: %w", err)
+	}
+
+	return nil
 }

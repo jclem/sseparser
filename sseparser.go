@@ -38,13 +38,18 @@ type Field struct {
 func ParseField(input []byte) (Field, error) {
 	scanner := parsec.NewScanner(input)
 	node, scanner := fieldParser(scanner)
+
 	if !scanner.Endof() {
 		cursor := scanner.GetCursor()
 		remainder := input[cursor:]
-		return Field{}, fmt.Errorf("Unexpected input: %q", remainder)
+		return Field{}, fmt.Errorf("unexpected input: %q", remainder)
 	}
 
-	return node.(Field), nil
+	if field, ok := node.(Field); ok {
+		return field, nil
+	}
+
+	return Field{}, fmt.Errorf("failed to parse field: unexpected type: %T", node)
 }
 
 var fieldParser = parsec.And(toField,
@@ -59,17 +64,33 @@ var fieldParser = parsec.And(toField,
 	eol,
 )
 
-func toField(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	name := nodes[0].(string)
-	vnodes := nodes[1].([]parsec.ParsecNode)
+func toField(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
+	name, ok := nodes[0].(string)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
+	}
+
+	vnodes, ok := nodes[1].([]parsec.ParsecNode)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", nodes[1]))
+	}
 
 	if len(vnodes) == 0 {
 		return Field{name, ""}
 	}
 
-	v := vnodes[0].([]parsec.ParsecNode)[2]
+	vand, ok := vnodes[0].([]parsec.ParsecNode)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", vnodes[0]))
+	}
 
-	return Field{name, v.(string)}
+	v := vand[2]
+
+	if vstr, ok := v.(string); ok {
+		return Field{name, vstr}
+	}
+
+	panic(fmt.Sprintf("unexpected type: %T\n", v))
 }
 
 // Comment is a comment in an SSE.
@@ -82,10 +103,15 @@ func ParseComment(input []byte) (Comment, error) {
 	if !scanner.Endof() {
 		cursor := scanner.GetCursor()
 		remainder := input[cursor:]
-		return Comment(""), fmt.Errorf("Unexpected input: %q", remainder)
+		return Comment(""), fmt.Errorf("unexpected input: %q", remainder)
 	}
 
-	return node.(Comment), nil
+	c, ok := node.(Comment)
+	if !ok {
+		return Comment(""), fmt.Errorf("failed to parse comment: unexpected Type: %T", node)
+	}
+
+	return c, nil
 }
 
 var commentParser = parsec.And(toComment,
@@ -94,9 +120,12 @@ var commentParser = parsec.And(toComment,
 	eol,
 )
 
-func toComment(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	str := nodes[1].(string)
-	return Comment(str)
+func toComment(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
+	if str, ok := nodes[1].(string); ok {
+		return Comment(str)
+	}
+
+	panic(fmt.Sprintf("unexpected type: %T\n", nodes[1]))
 }
 
 // Event is a server-sent event (SSE), which is a set of zero or more comments
@@ -149,14 +178,16 @@ type UnmarshalerSSEValue interface {
 	UnmarshalSSEValue(value string) error
 }
 
-func (e Event) unmarshal(v any) error {
+func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("invalid type: expected a non-nil pointer: %T", v)
 	}
 
 	if unmarshaler, ok := rv.Interface().(UnmarshalerSSE); ok {
-		return unmarshaler.UnmarshalSSE(e)
+		if err := unmarshaler.UnmarshalSSE(e); err != nil {
+			return fmt.Errorf("failed to unmarshal using UnmarshalerSSE interface: %w", err)
+		}
 	}
 
 	// Deref to get the underlying value.
@@ -176,43 +207,43 @@ func (e Event) unmarshal(v any) error {
 		}
 
 		for _, eventField := range e.Fields() {
-			if eventField.Name == tag {
-				switch rv.Field(i).Kind() {
+			if eventField.Name == tag { //nolint: nestif
+				switch rv.Field(i).Kind() { //nolint: exhaustive
 				case reflect.String:
 					rv.Field(i).SetString(eventField.Value)
 
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 					intValue, err := strconv.Atoi(eventField.Value)
 					if err != nil {
-						return fmt.Errorf("failed to convert string to int: %v", err)
+						return fmt.Errorf("failed to convert string to int: %w", err)
 					}
 					rv.Field(i).SetInt(int64(intValue))
 
 				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 					uintValue, err := strconv.ParseUint(eventField.Value, 10, 64)
 					if err != nil {
-						return fmt.Errorf("failed to convert string to uint: %v", err)
+						return fmt.Errorf("failed to convert string to uint: %w", err)
 					}
 					rv.Field(i).SetUint(uintValue)
 
 				case reflect.Float32, reflect.Float64:
 					floatValue, err := strconv.ParseFloat(eventField.Value, 64)
 					if err != nil {
-						return fmt.Errorf("failed to convert string to float: %v", err)
+						return fmt.Errorf("failed to convert string to float: %w", err)
 					}
 					rv.Field(i).SetFloat(floatValue)
 
 				case reflect.Bool:
 					boolValue, err := strconv.ParseBool(eventField.Value)
 					if err != nil {
-						return fmt.Errorf("failed to convert string to bool: %v", err)
+						return fmt.Errorf("failed to convert string to bool: %w", err)
 					}
 					rv.Field(i).SetBool(boolValue)
 
 				default:
 					if unmarshaler, ok := rv.Field(i).Addr().Interface().(UnmarshalerSSEValue); ok {
 						if err := unmarshaler.UnmarshalSSEValue(eventField.Value); err != nil {
-							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSEValue: %v", err)
+							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSEValue: %w", err)
 						}
 					}
 				}
@@ -232,10 +263,14 @@ func ParseEvent(input []byte) (Event, error) {
 	if !scanner.Endof() {
 		cursor := scanner.GetCursor()
 		remainder := input[cursor:]
-		return Event{}, fmt.Errorf("Unexpected input: %q", remainder)
+		return nil, fmt.Errorf("unexpected input: %q", remainder)
 	}
 
-	return node.(Event), nil
+	if n, ok := node.(Event); ok {
+		return n, nil
+	}
+
+	return nil, fmt.Errorf("failed to parse event: unexpected type: %T", node)
 }
 
 var eventParser = parsec.And(toEvent,
@@ -245,25 +280,34 @@ var eventParser = parsec.And(toEvent,
 	eol,
 )
 
-func toEvent(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	eventItems := nodes[0].([]parsec.ParsecNode)
+func toEvent(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
+	eventItems, ok := nodes[0].([]parsec.ParsecNode)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
+	}
+
 	event := Event(make([]any, 0, len(eventItems)))
 
-	for _, node := range nodes[0].([]parsec.ParsecNode) {
+	fnodes, ok := nodes[0].([]parsec.ParsecNode)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
+	}
+
+	for _, node := range fnodes {
 		switch t := node.(type) {
 		case Field:
 			event = append(event, t)
 		case Comment:
 			event = append(event, t)
 		default:
-			panic(fmt.Sprintf("Unknown type: %T\n", t))
+			panic(fmt.Sprintf("unexpected type: %T\n", t))
 		}
 	}
 
 	return event
 }
 
-func toEventItem(nodes []parsec.ParsecNode) parsec.ParsecNode {
+func toEventItem(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
 	node := nodes[0]
 
 	switch t := node.(type) {
@@ -272,7 +316,7 @@ func toEventItem(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	case Comment:
 		return t
 	default:
-		panic(fmt.Sprintf("Unknown type: %T\n", t))
+		panic(fmt.Sprintf("unexpected type: %T\n", t))
 	}
 }
 
@@ -286,10 +330,14 @@ func ParseStream(input []byte) (Stream, error) {
 	if !scanner.Endof() {
 		cursor := scanner.GetCursor()
 		remainder := input[cursor:]
-		return Stream{}, fmt.Errorf("Unexpected input: %q", remainder)
+		return Stream{}, fmt.Errorf("unexpected input: %q", remainder)
 	}
 
-	return node.(Stream), nil
+	if s, ok := node.(Stream); ok {
+		return s, nil
+	}
+
+	return nil, fmt.Errorf("failed to parse stream: unexpected type: %T", node)
 }
 
 var streamParser = parsec.And(toStream,
@@ -297,22 +345,36 @@ var streamParser = parsec.And(toStream,
 	parsec.Kleene(nil, eventParser),
 )
 
-func toStream(nodes []parsec.ParsecNode) parsec.ParsecNode {
-	eventNodes := nodes[1].([]parsec.ParsecNode)
+func toStream(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
+	eventNodes, ok := nodes[1].([]parsec.ParsecNode)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type: %T\n", nodes[1]))
+	}
+
 	stream := Stream(make([]Event, 0, len(eventNodes)))
 
 	for _, node := range eventNodes {
-		stream = append(stream, node.(Event))
+		enode, ok := node.(Event)
+		if !ok {
+			panic(fmt.Sprintf("unexpected type: %T\n", node))
+		}
+
+		stream = append(stream, enode)
 	}
 
 	return stream
 }
 
-func toString(nodes []parsec.ParsecNode) parsec.ParsecNode {
+func toString(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
 	var str string
 
 	for _, node := range nodes {
-		str += node.(*parsec.Terminal).Value
+		term, ok := node.(*parsec.Terminal)
+		if !ok {
+			panic(fmt.Sprintf("unexpected type: %T\n", node))
+		}
+
+		str += term.Value
 	}
 
 	return str
@@ -325,19 +387,21 @@ type StreamScanner struct {
 	rs  int
 }
 
-var ErrStreamEOF = errStreamEOF{io.EOF}
+// ErrStreamEOF is returned when the end of the stream is reached. It wraps
+// [io.EOF].
+var ErrStreamEOF = streamEOFError{io.EOF}
 
-type errStreamEOF struct {
+type streamEOFError struct {
 	eof error
 }
 
 // Error implements the error interface.
-func (e errStreamEOF) Error() string {
+func (e streamEOFError) Error() string {
 	return "end of stream"
 }
 
 // Unwrap implements the error unwrapping interface.
-func (e errStreamEOF) Unwrap() error {
+func (e streamEOFError) Unwrap() error {
 	return e.eof
 }
 
@@ -353,7 +417,7 @@ func (e errStreamEOF) Unwrap() error {
 // reader but was not part of the event. This data can be ignored while making
 // subsequent calls to Next, but may be used to recover from errors, or just
 // when not scanning the full stream.
-func (s *StreamScanner) Next() (*Event, []byte, error) {
+func (s *StreamScanner) Next() (Event, []byte, error) {
 	for {
 		b := make([]byte, s.rs)
 
@@ -361,11 +425,11 @@ func (s *StreamScanner) Next() (*Event, []byte, error) {
 		n, err := s.r.Read(b)
 		s.buf = append(s.buf, b[:n]...)
 		if err != nil {
-			if err == io.EOF {
-				eof = ErrStreamEOF
-			} else {
-				return nil, s.buf, err
+			if err != io.EOF {
+				return nil, s.buf, fmt.Errorf("failed to read from reader: %w", err)
 			}
+
+			eof = ErrStreamEOF
 		}
 
 		scanner := parsec.NewScanner(s.buf)
@@ -374,7 +438,7 @@ func (s *StreamScanner) Next() (*Event, []byte, error) {
 		if node, ok := node.(Event); ok {
 			offset := scanner.GetCursor()
 			s.buf = s.buf[offset:]
-			return &node, s.buf, nil
+			return node, s.buf, nil
 		} else if eof != nil {
 			return nil, s.buf, eof
 		} else {
@@ -392,7 +456,7 @@ func (s *StreamScanner) UnmarshalNext(v any) ([]byte, error) {
 		return left, err
 	}
 
-	return left, event.unmarshal(v)
+	return left, unmarshalEvent(event, v)
 }
 
 // NewStreamScanner scans a [io.Reader] for SSEs.

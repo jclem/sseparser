@@ -4,7 +4,8 @@ This package provides functionality for parsing server-sent event streams,
 defined by [the SSE
 specification](https://html.spec.whatwg.org/multipage/server-sent-events.html).
 
-**Note:** This is currently pretty basic to cover some personal needs. It does
+> [!WARNING]
+> This is currently pretty basic to cover some personal needs. It does
 not handle malformed streams well.
 
 ## Usage

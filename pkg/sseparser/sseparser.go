@@ -129,8 +129,8 @@ func (e Event) Comments() []Comment {
 // UnmarshalerSSE is an interface implemented by types that can unmarshal an SSE
 // event.
 type UnmarshalerSSE interface {
-	// UnmarshalSSE unmarshals the given event fields into the type.
-	UnmarshalSSE(fields []Field) error
+	// UnmarshalSSE unmarshals the given event into the type.
+	UnmarshalSSE(event Event) error
 }
 
 // UnmarshalerSSEValue is an interface implemented by types that can unmarshal
@@ -147,7 +147,7 @@ func (e Event) unmarshal(v any) error {
 	}
 
 	if unmarshaler, ok := rv.Interface().(UnmarshalerSSE); ok {
-		return unmarshaler.UnmarshalSSE(e.Fields())
+		return unmarshaler.UnmarshalSSE(e)
 	}
 
 	// Deref to get the underlying value.

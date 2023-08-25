@@ -108,7 +108,7 @@ func ParseComment(input []byte) (Comment, error) {
 
 	c, ok := node.(Comment)
 	if !ok {
-		return Comment(""), fmt.Errorf("failed to parse comment: unexpected Type: %T", node)
+		return Comment(""), fmt.Errorf("failed to parse comment: unexpected type: %T", node)
 	}
 
 	return c, nil

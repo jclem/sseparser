@@ -69,12 +69,12 @@ func main() {
 
 	defer resp.Body.Close()
 
-  // We create a new stream scanner that reads the HTTP response body.
+	// We create a new stream scanner that reads the HTTP response body.
 	scanner := sseparser.NewStreamScanner(resp.Body)
 
 	for {
-    // Then, we call `UnmarshalNext`, and log each completion chunk, until we
-    // encounter an error or reach the end of the stream.
+		// Then, we call `UnmarshalNext`, and log each completion chunk, until we
+		// encounter an error or reach the end of the stream.
 		e := event{}
 		_, err := scanner.UnmarshalNext(&e)
 		if err != nil {

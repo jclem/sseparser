@@ -281,19 +281,14 @@ var eventParser = parsec.And(toEvent,
 )
 
 func toEvent(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
-	eventItems, ok := nodes[0].([]parsec.ParsecNode)
+	enodes, ok := nodes[0].([]parsec.ParsecNode)
 	if !ok {
 		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
 	}
 
-	event := Event(make([]any, 0, len(eventItems)))
+	event := Event(make([]any, 0, len(enodes)))
 
-	fnodes, ok := nodes[0].([]parsec.ParsecNode)
-	if !ok {
-		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
-	}
-
-	for _, node := range fnodes {
+	for _, node := range enodes {
 		switch t := node.(type) {
 		case Field:
 			event = append(event, t)

@@ -5,6 +5,7 @@ package sseparser
 
 import (
 	"fmt"
+	"io"
 
 	parsec "github.com/prataprc/goparsec"
 )
@@ -210,4 +211,53 @@ func toString(nodes []parsec.ParsecNode) parsec.ParsecNode {
 	}
 
 	return str
+}
+
+// StreamScanner scans a reader for SSE events.
+type StreamScanner struct {
+	buf []byte
+	r   io.Reader
+	rs  int
+}
+
+// Next returns the next event in the stream.
+func (s *StreamScanner) Next() (Event, bool, error) {
+	for {
+		b := make([]byte, s.rs)
+
+		eof := false
+		n, err := s.r.Read(b)
+		if err != nil {
+			if err == io.EOF {
+				eof = true
+			} else {
+				return Event{}, false, err
+			}
+		}
+
+		s.buf = append(s.buf, b[:n]...)
+
+		scanner := parsec.NewScanner(s.buf)
+
+		node, scanner := eventParser(scanner)
+
+		if node, ok := node.(Event); ok {
+			offset := scanner.GetCursor()
+			s.buf = s.buf[offset:]
+			return node, true, nil
+		} else if eof {
+			return Event{}, false, nil
+		} else {
+			continue
+		}
+	}
+}
+
+// NewStreamScanner scans a reader for SSE events.
+func NewStreamScanner(reader io.Reader) *StreamScanner {
+	return &StreamScanner{
+		buf: []byte{},
+		r:   reader,
+		rs:  64,
+	}
 }

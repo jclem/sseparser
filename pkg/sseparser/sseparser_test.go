@@ -1,6 +1,7 @@
 package sseparser_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/jclem/sseparser/pkg/sseparser"
@@ -209,4 +210,37 @@ func TestParseStream(t *testing.T) {
 		_, err := sseparser.ParseStream(test.input)
 		assert.EqualError(t, err, test.msg)
 	}
+}
+
+func TestStreamScanner(t *testing.T) {
+	input := []byte(":event-1\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfield-3: value-3\n\n")
+	reader := bytes.NewReader(input)
+
+	scanner := sseparser.NewStreamScanner(reader)
+
+	expected := []sseparser.Event{
+		{
+			sseparser.Comment("event-1"),
+			sseparser.Field{"field-1", "value-1"},
+			sseparser.Field{"field-2", "value-2"},
+		},
+		{
+			sseparser.Comment("event-2"),
+			sseparser.Field{"field-3", "value-3"},
+		},
+	}
+
+	e, ok, err := scanner.Next()
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, expected[0], e)
+
+	e, ok, err = scanner.Next()
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, expected[1], e)
+
+	_, ok, err = scanner.Next()
+	require.NoError(t, err)
+	assert.False(t, ok)
 }

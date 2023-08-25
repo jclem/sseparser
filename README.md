@@ -75,7 +75,7 @@ func main() {
 	for {
 		// Then, we call `UnmarshalNext`, and log each completion chunk, until we
 		// encounter an error or reach the end of the stream.
-		e := event{}
+		var e event
 		_, err := scanner.UnmarshalNext(&e)
 		if err != nil {
 			if errors.As(err, &sseparser.ErrStreamEOF{}) {

@@ -221,17 +221,17 @@ type StreamScanner struct {
 }
 
 // Next returns the next event in the stream.
-func (s *StreamScanner) Next() (Event, bool, error) {
+func (s *StreamScanner) Next() (*Event, error) {
 	for {
 		b := make([]byte, s.rs)
 
-		eof := false
+		var eof error
 		n, err := s.r.Read(b)
 		if err != nil {
 			if err == io.EOF {
-				eof = true
+				eof = err
 			} else {
-				return Event{}, false, err
+				return nil, err
 			}
 		}
 
@@ -244,9 +244,9 @@ func (s *StreamScanner) Next() (Event, bool, error) {
 		if node, ok := node.(Event); ok {
 			offset := scanner.GetCursor()
 			s.buf = s.buf[offset:]
-			return node, true, nil
-		} else if eof {
-			return Event{}, false, nil
+			return &node, nil
+		} else if eof != nil {
+			return nil, eof
 		} else {
 			continue
 		}

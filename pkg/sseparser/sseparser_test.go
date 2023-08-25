@@ -2,6 +2,7 @@ package sseparser_test
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/jclem/sseparser/pkg/sseparser"
@@ -218,7 +219,7 @@ func TestStreamScanner(t *testing.T) {
 
 	scanner := sseparser.NewStreamScanner(reader)
 
-	expected := []sseparser.Event{
+	expected := []*sseparser.Event{
 		{
 			sseparser.Comment("event-1"),
 			sseparser.Field{"field-1", "value-1"},
@@ -230,17 +231,15 @@ func TestStreamScanner(t *testing.T) {
 		},
 	}
 
-	e, ok, err := scanner.Next()
+	e, err := scanner.Next()
 	require.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, expected[0], e)
 
-	e, ok, err = scanner.Next()
+	e, err = scanner.Next()
 	require.NoError(t, err)
-	assert.True(t, ok)
 	assert.Equal(t, expected[1], e)
 
-	_, ok, err = scanner.Next()
-	require.NoError(t, err)
-	assert.False(t, ok)
+	e, err = scanner.Next()
+	assert.Nil(t, e)
+	assert.ErrorIs(t, err, io.EOF)
 }

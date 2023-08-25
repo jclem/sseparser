@@ -1,11 +1,17 @@
 // Package sseparser provides a parser for Server-Sent Events (SSE).
 // The SSE specification this package is modeled on can be found here:
 // https://html.spec.whatwg.org/multipage/server-sent-events.html
+//
+// The primary means of utilizing this package is through the StreamScanner
+// type, which scans an io.Reader for SSE events.
 package sseparser
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"strconv"
 
 	parsec "github.com/prataprc/goparsec"
 )
@@ -118,6 +124,96 @@ func (e Event) Comments() []Comment {
 	}
 
 	return comments
+}
+
+// UnmarshalerSSE is an interface implemented by types that can unmarshal an SSE
+// event.
+type UnmarshalerSSE interface {
+	// UnmarshalSSE unmarshals the given event fields into the type.
+	UnmarshalSSE(fields []Field) error
+}
+
+// UnmarshalerSSEValue is an interface implemented by types that can unmarshal
+// an SSE field value.
+type UnmarshalerSSEValue interface {
+	// UnmarshalSSEValue unmarshals the given event field value into the type.
+	UnmarshalSSEValue(value string) error
+}
+
+func (e Event) unmarshal(v any) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return fmt.Errorf("invalid type: expected a non-nil pointer: %T", v)
+	}
+
+	if unmarshaler, ok := rv.Interface().(UnmarshalerSSE); ok {
+		return unmarshaler.UnmarshalSSE(e.Fields())
+	}
+
+	// Deref to get the underlying value.
+	rv = rv.Elem()
+
+	if rv.Kind() != reflect.Struct {
+		return errors.New("invalid type: expected a struct")
+	}
+
+	for i := 0; i < rv.NumField(); i++ {
+		field := rv.Type().Field(i)
+
+		// Look for "sse" tag.
+		tag, ok := field.Tag.Lookup("sse")
+		if !ok {
+			continue
+		}
+
+		for _, eventField := range e.Fields() {
+			if eventField.Key == tag {
+				switch rv.Field(i).Kind() {
+				case reflect.String:
+					rv.Field(i).SetString(eventField.Value)
+
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					intValue, err := strconv.Atoi(eventField.Value)
+					if err != nil {
+						return fmt.Errorf("failed to convert string to int: %v", err)
+					}
+					rv.Field(i).SetInt(int64(intValue))
+
+				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+					uintValue, err := strconv.ParseUint(eventField.Value, 10, 64)
+					if err != nil {
+						return fmt.Errorf("failed to convert string to uint: %v", err)
+					}
+					rv.Field(i).SetUint(uintValue)
+
+				case reflect.Float32, reflect.Float64:
+					floatValue, err := strconv.ParseFloat(eventField.Value, 64)
+					if err != nil {
+						return fmt.Errorf("failed to convert string to float: %v", err)
+					}
+					rv.Field(i).SetFloat(floatValue)
+
+				case reflect.Bool:
+					boolValue, err := strconv.ParseBool(eventField.Value)
+					if err != nil {
+						return fmt.Errorf("failed to convert string to bool: %v", err)
+					}
+					rv.Field(i).SetBool(boolValue)
+
+				default:
+					if unmarshaler, ok := rv.Field(i).Addr().Interface().(UnmarshalerSSEValue); ok {
+						if err := unmarshaler.UnmarshalSSEValue(eventField.Value); err != nil {
+							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSE: %v", err)
+						}
+					}
+				}
+
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // ParseEvent parses an input into an Event.
@@ -251,6 +347,16 @@ func (s *StreamScanner) Next() (*Event, error) {
 			continue
 		}
 	}
+}
+
+// Unmarshal unmarshals the next event in the stream into the provided struct.
+func (s *StreamScanner) Unmarshal(v any) error {
+	event, err := s.Next()
+	if err != nil {
+		return err
+	}
+
+	return event.unmarshal(v)
 }
 
 // NewStreamScanner scans a reader for SSE events.

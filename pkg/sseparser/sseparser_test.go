@@ -2,6 +2,7 @@ package sseparser_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"testing"
 
@@ -242,4 +243,56 @@ func TestStreamScanner(t *testing.T) {
 	e, err = scanner.Next()
 	assert.Nil(t, e)
 	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestUnmarshal(t *testing.T) {
+	input := []byte(":event-1\nfoo: 1\nbar: hello\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfoo: 1\nfield-3: value-3\n\nfoo: true\n\nmeta: {\"foo\": \"bar\"}\n\n")
+
+	type testStruct struct {
+		Foo string `sse:"foo"`
+		Bar string `sse:"bar"`
+	}
+
+	type testStruct2 struct {
+		Foo int `sse:"foo"`
+	}
+
+	type testStruct3 struct {
+		Foo bool `sse:"foo"`
+	}
+
+	type testStruct4 struct {
+		Meta meta `sse:"meta"`
+	}
+
+	reader := bytes.NewReader(input)
+	scanner := sseparser.NewStreamScanner(reader)
+
+	event := testStruct{}
+	err := scanner.Unmarshal(&event)
+	require.NoError(t, err)
+	assert.Equal(t, testStruct{"1", "hello"}, event)
+
+	event2 := testStruct2{}
+	err = scanner.Unmarshal(&event2)
+	require.NoError(t, err)
+	assert.Equal(t, testStruct2{1}, event2)
+
+	event3 := testStruct3{}
+	err = scanner.Unmarshal(&event3)
+	require.NoError(t, err)
+	assert.Equal(t, testStruct3{true}, event3)
+
+	event4 := testStruct4{}
+	err = scanner.Unmarshal(&event4)
+	require.NoError(t, err)
+	assert.Equal(t, testStruct4{meta{"bar"}}, event4)
+}
+
+type meta struct {
+	Foo string `json:"foo"`
+}
+
+func (m *meta) UnmarshalSSEValue(v string) error {
+	return json.Unmarshal([]byte(v), m)
 }

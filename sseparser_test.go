@@ -290,8 +290,8 @@ func TestStreamScanner(t *testing.T) {
 
 	e, b, err := scanner.Next()
 	assert.Nil(t, e)
-	assert.ErrorAs(t, err, &sseparser.ErrStreamEOF{})
-	assert.ErrorAs(t, err, &io.EOF)
+	assert.ErrorIs(t, err, sseparser.ErrStreamEOF)
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, []byte("LEFTOVER"), b)
 }
 
@@ -311,7 +311,7 @@ field-3: value-3
 	for {
 		e, _, err := scanner.Next()
 		if err != nil {
-			if errors.As(err, &sseparser.ErrStreamEOF{}) {
+			if errors.Is(err, sseparser.ErrStreamEOF) {
 				break
 			}
 
@@ -397,7 +397,7 @@ foo: true
 		var event testStruct
 		_, err := scanner.UnmarshalNext(&event)
 		if err != nil {
-			if errors.As(err, &sseparser.ErrStreamEOF{}) {
+			if errors.Is(err, sseparser.ErrStreamEOF) {
 				break
 			}
 

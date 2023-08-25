@@ -325,29 +325,20 @@ type StreamScanner struct {
 	rs  int
 }
 
-// ErrStreamEOF is returned when the end of the stream is reached. This error
-// wraps an [io.EOF] error.
-type ErrStreamEOF struct {
+var ErrStreamEOF = errStreamEOF{io.EOF}
+
+type errStreamEOF struct {
 	eof error
 }
 
 // Error implements the error interface.
-func (e ErrStreamEOF) Error() string {
+func (e errStreamEOF) Error() string {
 	return "end of stream"
 }
 
 // Unwrap implements the error unwrapping interface.
-func (e ErrStreamEOF) Unwrap() error {
+func (e errStreamEOF) Unwrap() error {
 	return e.eof
-}
-
-// newErrStreamEOF creates a new [ErrStreamEOF] error.
-func newErrStreamEOF(err error) ErrStreamEOF {
-	if err != io.EOF {
-		panic("newErrStreamEOF called with non-EOF error")
-	}
-
-	return ErrStreamEOF{err}
 }
 
 // Next returns the next event in the stream. There are three possible return states:
@@ -371,7 +362,7 @@ func (s *StreamScanner) Next() (*Event, []byte, error) {
 		s.buf = append(s.buf, b[:n]...)
 		if err != nil {
 			if err == io.EOF {
-				eof = newErrStreamEOF(err)
+				eof = ErrStreamEOF
 			} else {
 				return nil, s.buf, err
 			}

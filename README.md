@@ -78,7 +78,7 @@ func main() {
 		var e event
 		_, err := scanner.UnmarshalNext(&e)
 		if err != nil {
-			if errors.As(err, &sseparser.ErrStreamEOF{}) {
+			if errors.Is(err, sseparser.ErrStreamEOF) {
 				os.Exit(0)
 			}
 

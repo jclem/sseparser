@@ -206,49 +206,51 @@ func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
 			continue
 		}
 
+		value := ""
+
 		for _, eventField := range e.Fields() {
 			if eventField.Name == tag { //nolint: nestif
-				switch rv.Field(i).Kind() { //nolint: exhaustive
-				case reflect.String:
-					rv.Field(i).SetString(eventField.Value)
+				value = value + eventField.Value
+			}
+		}
 
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					intValue, err := strconv.Atoi(eventField.Value)
-					if err != nil {
-						return fmt.Errorf("failed to convert string to int: %w", err)
-					}
-					rv.Field(i).SetInt(int64(intValue))
+		switch rv.Field(i).Kind() { //nolint: exhaustive
+		case reflect.String:
+			rv.Field(i).SetString(value)
 
-				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-					uintValue, err := strconv.ParseUint(eventField.Value, 10, 64)
-					if err != nil {
-						return fmt.Errorf("failed to convert string to uint: %w", err)
-					}
-					rv.Field(i).SetUint(uintValue)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			intValue, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("failed to convert string to int: %w", err)
+			}
+			rv.Field(i).SetInt(int64(intValue))
 
-				case reflect.Float32, reflect.Float64:
-					floatValue, err := strconv.ParseFloat(eventField.Value, 64)
-					if err != nil {
-						return fmt.Errorf("failed to convert string to float: %w", err)
-					}
-					rv.Field(i).SetFloat(floatValue)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			uintValue, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return fmt.Errorf("failed to convert string to uint: %w", err)
+			}
+			rv.Field(i).SetUint(uintValue)
 
-				case reflect.Bool:
-					boolValue, err := strconv.ParseBool(eventField.Value)
-					if err != nil {
-						return fmt.Errorf("failed to convert string to bool: %w", err)
-					}
-					rv.Field(i).SetBool(boolValue)
+		case reflect.Float32, reflect.Float64:
+			floatValue, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return fmt.Errorf("failed to convert string to float: %w", err)
+			}
+			rv.Field(i).SetFloat(floatValue)
 
-				default:
-					if unmarshaler, ok := rv.Field(i).Addr().Interface().(UnmarshalerSSEValue); ok {
-						if err := unmarshaler.UnmarshalSSEValue(eventField.Value); err != nil {
-							return fmt.Errorf("failed to unmarshal using custom UnmarshalSSEValue: %w", err)
-						}
-					}
+		case reflect.Bool:
+			boolValue, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("failed to convert string to bool: %w", err)
+			}
+			rv.Field(i).SetBool(boolValue)
+
+		default:
+			if unmarshaler, ok := rv.Field(i).Addr().Interface().(UnmarshalerSSEValue); ok {
+				if err := unmarshaler.UnmarshalSSEValue(value); err != nil {
+					return fmt.Errorf("failed to unmarshal using custom UnmarshalSSEValue: %w", err)
 				}
-
-				break
 			}
 		}
 	}

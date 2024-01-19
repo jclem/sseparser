@@ -329,7 +329,8 @@ field-3: value-3
 func TestStreamScanner_UnmarshalNext(t *testing.T) {
 	input := []byte(`:event-1
 foo: 1
-bar: hello
+bar: he
+bar: llo
 field-1: value-1
 field-2: value-2
 

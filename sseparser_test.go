@@ -174,6 +174,16 @@ func TestParseEvent(t *testing.T) {
 			[]sseparser.Comment{},
 		},
 		{
+			[]byte("a:0\nb:1\r\n\r"),
+			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
+			[]sseparser.Comment{},
+		},
+		{
+			[]byte("a:0\nb:1\r\n\n"),
+			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
+			[]sseparser.Comment{},
+		},
+		{
 			[]byte("a:0\rb:1\n\r"),
 			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
 			[]sseparser.Comment{},

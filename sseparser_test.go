@@ -38,6 +38,14 @@ func TestParseField(t *testing.T) {
 			[]byte("foo bar\n"),
 			sseparser.Field{"foo bar", ""},
 		},
+		{
+			[]byte("foo: bar\r"),
+			sseparser.Field{"foo", "bar"},
+		},
+		{
+			[]byte("foo: bar\r\n"),
+			sseparser.Field{"foo", "bar"},
+		},
 	}
 
 	for _, test := range tests {
@@ -57,6 +65,14 @@ func TestParseField(t *testing.T) {
 		{
 			[]byte("foo: bar"),
 			"unexpected input: \"foo: bar\"",
+		},
+		{
+			[]byte("foo: bar\n\n"),
+			"unexpected input: \"\\n\"",
+		},
+		{
+			[]byte("foo: bar\r\r"),
+			"unexpected input: \"\\r\"",
 		},
 	}
 
@@ -146,6 +162,21 @@ func TestParseEvent(t *testing.T) {
 				sseparser.Comment("hello"),
 				sseparser.Comment("bar"),
 			},
+		},
+		{
+			[]byte("a:0\nb:1\n\n"),
+			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
+			[]sseparser.Comment{},
+		},
+		{
+			[]byte("a:0\nb:1\r\n\r\n"),
+			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
+			[]sseparser.Comment{},
+		},
+		{
+			[]byte("a:0\rb:1\n\r"),
+			[]sseparser.Field{{"a", "0"}, {"b", "1"}},
+			[]sseparser.Comment{},
 		},
 		{
 			[]byte("\n"),

@@ -207,10 +207,9 @@ func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
 		}
 
 		value := ""
-
 		for _, eventField := range e.Fields() {
-			if eventField.Name == tag { //nolint: nestif
-				value = value + eventField.Value
+			if eventField.Name == tag {
+				value += eventField.Value
 			}
 		}
 

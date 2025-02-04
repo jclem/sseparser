@@ -1,62 +1,34 @@
-linters:
-  enable-all: true
-
-  disable:
-    - depguard
-    - exhaustruct
-    - funlen
-    - gci
-    - gochecknoglobals
-    - goerr113
-    - gofumpt
-    - gomnd
-    - nlreturn
-    - paralleltest
-    - tagliatelle
-    - tparallel
-    - varnamelen
-    - wsl
-    # Deprecated:
-    - deadcode
-    - exhaustivestruct
-    - ifshort
-    - interfacer
-    - golint
-    - maligned
-    - nosnakecase
-    - scopelint
-    - structcheck
-    - varcheck
+run:
+  timeout: 5m
 
 issues:
-  exclude-use-default: false
-  max-issues-per-linter: 0
-  max-same-issues: 0
+  exclude-rules:
+    - path: ".*_test.go"
+      linters:
+        - funlen # tests are often long with many cases
 
-linters-settings:
-  revive:
-    enable-all-rules: true
+linters:
+  presets:
+    - bugs
+    - comment
+    - complexity
+    - error
+    - format
+    - import
+    - metalinter
+    - module
+    - performance
+    - sql
+    - style
+    - test
+    - unused
 
-    rules:
-      - name: add-constant
-        disabled: true
-      - name: argument-limit
-        disabled: true
-      - name: banned-characters
-        disabled: true
-      - name: cognitive-complexity
-        disabled: true
-      - name: cyclomatic
-        disabled: true
-      - name: file-header
-        disabled: true
-      - name: function-length
-        disabled: true
-      - name: function-result-limit
-        disabled: true
-      - name: line-length-limit
-        disabled: true
-      - name: max-public-structs
-        disabled: true
-      - name: unused-receiver
-        disabled: true
+  disable:
+    - depguard # enforces dependency allow list; not using allow list
+    - err113 # disallows returning one-off errors; annoying
+    - gochecknoglobals # disallows global variables; used for parsec atoms
+    - gofumpt # different code formatter; bad
+    - nlreturn # requires blank line before return; annoying
+    - tagliatelle # enforces struct tag format; annoying, often wrong
+    - varnamelen # limits variable name length; too many false positives
+    - wsl # whitespace/cuddle rules; tedious

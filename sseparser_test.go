@@ -14,6 +14,8 @@ import (
 )
 
 func TestParseField(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    []byte
 		expected sseparser.Field
@@ -96,6 +98,8 @@ func ExampleParseField() {
 }
 
 func TestParseComment(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    []byte
 		expected sseparser.Comment
@@ -148,6 +152,8 @@ func ExampleParseComment() {
 }
 
 func TestParseEvent(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    []byte
 		fields   []sseparser.Field
@@ -234,6 +240,8 @@ func ExampleParseEvent() {
 }
 
 func TestParseStream(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    []byte
 		expected sseparser.Stream
@@ -304,6 +312,8 @@ func ExampleParseStream() {
 }
 
 func TestStreamScanner(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(":event-1\nfield-1: value-1\nfield-2: value-2\n\n:event-2\nfield-3: value-3\n\nLEFTOVER")
 	reader := bytes.NewReader(input)
 
@@ -331,8 +341,8 @@ func TestStreamScanner(t *testing.T) {
 
 	e, b, err := scanner.Next()
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, sseparser.ErrStreamEOF)
-	assert.ErrorIs(t, err, io.EOF)
+	require.ErrorIs(t, err, sseparser.ErrStreamEOF)
+	require.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, []byte("LEFTOVER"), b)
 }
 
@@ -368,6 +378,8 @@ field-3: value-3
 }
 
 func TestStreamScanner_UnmarshalNext(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`:event-1
 foo: 1
 bar: he
@@ -493,6 +505,33 @@ bar: hello
 	_, _ = fmt.Printf("%+v\n", s)
 	// Output:
 	// {Foo:1 Bar:hello}
+}
+
+func ExampleUnmarshalerSSE_jSON() {
+	input := []byte(`:event-1
+meta: {"foo":"bar"}
+
+`)
+
+	// The "ssejson" tag tells the UnmarshalerSSE to unmarshal the value as
+	// JSON.
+
+	type testStruct struct {
+		Meta meta `ssejson:"meta"`
+	}
+
+	reader := bytes.NewReader(input)
+	scanner := sseparser.NewStreamScanner(reader)
+
+	var s testStruct
+	_, err := scanner.UnmarshalNext(&s)
+	if err != nil {
+		panic(err)
+	}
+
+	_, _ = fmt.Printf("%+v\n", s)
+	// Output:
+	// {Meta:{Foo:bar}}
 }
 
 func ExampleUnmarshalerSSEValue() {

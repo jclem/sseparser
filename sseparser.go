@@ -7,6 +7,7 @@
 package sseparser
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -64,7 +65,7 @@ var fieldParser = parsec.And(toField,
 	eol,
 )
 
-func toField(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint: ireturn
+func toField(nodes []parsec.ParsecNode) parsec.ParsecNode { //nolint:ireturn // Required by parsec
 	name, ok := nodes[0].(string)
 	if !ok {
 		panic(fmt.Sprintf("unexpected type: %T\n", nodes[0]))
@@ -178,7 +179,7 @@ type UnmarshalerSSEValue interface {
 	UnmarshalSSEValue(value string) error
 }
 
-func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
+func unmarshalEvent(e Event, v any) error { //nolint:cyclop,funlen,gocognit // Easier as one large function
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("invalid type: expected a non-nil pointer: %T", v)
@@ -197,13 +198,18 @@ func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
 		return errors.New("invalid type: expected a struct")
 	}
 
-	for i := 0; i < rv.NumField(); i++ {
+	for i := range rv.NumField() {
 		field := rv.Type().Field(i)
 
-		// Look for "sse" tag.
+		isJSON := false
+
 		tag, ok := field.Tag.Lookup("sse")
 		if !ok {
-			continue
+			tag, ok = field.Tag.Lookup("ssejson")
+			if !ok {
+				continue
+			}
+			isJSON = true
 		}
 
 		value := ""
@@ -213,7 +219,17 @@ func unmarshalEvent(e Event, v any) error { //nolint: gocognit, cyclop
 			}
 		}
 
-		switch rv.Field(i).Kind() { //nolint: exhaustive
+		if isJSON {
+			v := rv.Field(i).Addr().Interface()
+			if err := json.Unmarshal([]byte(value), &v); err != nil {
+				return fmt.Errorf("unmarshal field JSON: %w", err)
+			}
+
+			continue
+		}
+
+		//nolint:exhaustive
+		switch rv.Field(i).Kind() {
 		case reflect.String:
 			rv.Field(i).SetString(value)
 
@@ -437,8 +453,6 @@ func (s *StreamScanner) Next() (Event, []byte, error) {
 			return node, s.buf, nil
 		} else if eof != nil {
 			return nil, s.buf, eof
-		} else {
-			continue
 		}
 	}
 }
@@ -455,15 +469,37 @@ func (s *StreamScanner) UnmarshalNext(v any) ([]byte, error) {
 	return left, unmarshalEvent(event, v)
 }
 
+const defaultReadSize = 64
+
 // NewStreamScanner scans a [io.Reader] for SSEs.
-func NewStreamScanner(reader io.Reader) *StreamScanner {
+func NewStreamScanner(reader io.Reader, opts ...Opt) *StreamScanner {
 	if reader == nil {
 		panic("reader cannot be nil")
 	}
 
-	return &StreamScanner{
+	s := StreamScanner{
 		buf: []byte{},
 		r:   reader,
-		rs:  64,
+		rs:  defaultReadSize,
+	}
+
+	for _, opt := range opts {
+		opt(&s)
+	}
+
+	if s.rs <= 0 {
+		panic("read size must be greater than 0")
+	}
+
+	return &s
+}
+
+// Opt is an option for configuring a [StreamScanner].
+type Opt func(*StreamScanner)
+
+// WithReadSize sets the read size for the [StreamScanner].
+func WithReadSize(size int) Opt {
+	return func(s *StreamScanner) {
+		s.rs = size
 	}
 }
